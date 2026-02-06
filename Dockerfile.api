@@ -1,14 +1,13 @@
-# Multi-stage build: keeps final image small.
-# Stage 1: build the wheel
+# FastAPI service
 FROM python:3.11-slim AS builder
 WORKDIR /build
 COPY pyproject.toml .
 COPY src/ src/
 RUN pip install --no-cache-dir build && python -m build --wheel
 
-# Stage 2: runtime (pipeline CLI)
 FROM python:3.11-slim
 WORKDIR /app
 COPY --from=builder /build/dist/*.whl /tmp/
-RUN pip install --no-cache-dir "/tmp/wikiapp-*.whl[postgres]" && rm /tmp/*.whl
-ENTRYPOINT ["wikiapp"]
+RUN pip install --no-cache-dir "/tmp/wikiapp-*.whl[api]" && rm /tmp/*.whl
+EXPOSE 8000
+CMD ["uvicorn", "wikiapp.api:app", "--host", "0.0.0.0", "--port", "8000"]

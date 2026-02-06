@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from pathlib import Path
 
 from wikiapp import db, model, population, scraper
 
@@ -15,10 +14,9 @@ def main(argv: list[str] | None = None) -> None:
         description="Museum visitor vs city population analysis"
     )
     parser.add_argument(
-        "--db-path",
-        type=Path,
-        default=db.DEFAULT_DB_PATH,
-        help="Path to SQLite database file (default: data/museums.db)",
+        "--database-url",
+        default=None,
+        help="SQLAlchemy database URL (default: DATABASE_URL env var or sqlite:///data/museums.db)",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable debug logging"
@@ -43,14 +41,14 @@ def main(argv: list[str] | None = None) -> None:
     museums = population.enrich_museums_with_population(museums)
 
     # 3. Store in database
-    logging.info("Building database at %s...", args.db_path)
-    conn = db.get_connection(args.db_path)
-    db.init_db(conn)
-    db.load_museums(museums, conn)
+    engine = db.get_engine(args.database_url)
+    logging.info("Building database (%s)...", engine.url.drivername)
+    db.init_db(engine)
+    db.load_museums(museums, engine)
 
     # 4. Query and run regression
-    df = db.query_dataset(conn)
-    conn.close()
+    df = db.query_dataset(engine)
+    engine.dispose()
 
     if df.empty:
         logging.error("No data with population info available for regression.")

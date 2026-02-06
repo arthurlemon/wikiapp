@@ -1,10 +1,17 @@
-"""Tests for the core pipeline: scraper → population → db → model."""
+"""Tests for the core pipeline: scraper → population → db → model.
 
-import sqlite3
+All DB tests use SQLite in-memory via SQLAlchemy — no PostgreSQL needed.
+"""
 
 import pandas as pd
+from sqlalchemy import create_engine
 
 from wikiapp import db, model, population, scraper
+
+
+def _mem_engine():
+    """SQLite in-memory engine for tests."""
+    return create_engine("sqlite://")
 
 
 def test_bundled_snapshot_has_enough_museums():
@@ -33,8 +40,8 @@ def test_enrich_museums():
 
 
 def test_db_roundtrip():
-    conn = sqlite3.connect(":memory:")
-    db.init_db(conn)
+    engine = _mem_engine()
+    db.init_db(engine)
 
     museums_data = [
         {"name": "Museum A", "city": "Paris", "country": "France",
@@ -42,12 +49,29 @@ def test_db_roundtrip():
         {"name": "Museum B", "city": "London", "country": "UK",
          "visitors": 3_000_000, "city_population": 8_982_000},
     ]
-    db.load_museums(museums_data, conn)
+    db.load_museums(museums_data, engine)
 
-    df = db.query_dataset(conn)
+    df = db.query_dataset(engine)
     assert len(df) == 2
     assert "city_population" in df.columns
-    conn.close()
+    engine.dispose()
+
+
+def test_db_upsert_idempotent():
+    """Loading the same data twice should not duplicate rows."""
+    engine = _mem_engine()
+    db.init_db(engine)
+
+    museums_data = [
+        {"name": "Museum A", "city": "Paris", "country": "France",
+         "visitors": 5_000_000, "city_population": 2_161_000},
+    ]
+    db.load_museums(museums_data, engine)
+    db.load_museums(museums_data, engine)
+
+    df = db.query_dataset(engine)
+    assert len(df) == 1
+    engine.dispose()
 
 
 def test_regression():
@@ -56,7 +80,7 @@ def test_regression():
         "visitors": [2_000_000, 3_000_000, 4_000_000, 5_000_000],
     })
     result = model.run_regression(df)
-    assert result.r2 > 0.9  # strong linear relationship in synthetic data
+    assert result.r2 > 0.9
     assert result.coef > 0
     assert len(result.y_pred) == 4
 
@@ -66,11 +90,11 @@ def test_full_pipeline_in_memory():
     museums = scraper._bundled_snapshot()
     museums = population.enrich_museums_with_population(museums)
 
-    conn = sqlite3.connect(":memory:")
-    db.init_db(conn)
-    db.load_museums(museums, conn)
-    df = db.query_dataset(conn)
-    conn.close()
+    engine = _mem_engine()
+    db.init_db(engine)
+    db.load_museums(museums, engine)
+    df = db.query_dataset(engine)
+    engine.dispose()
 
     assert len(df) > 15
     result = model.run_regression(df)

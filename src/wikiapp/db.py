@@ -1,91 +1,154 @@
-"""SQLite database layer.
+"""Database layer using SQLAlchemy Core.
+
+Supports both PostgreSQL (production / Docker) and SQLite (local dev / tests).
+The backend is selected via DATABASE_URL environment variable:
+  - postgresql://user:pass@host/db  → PostgreSQL
+  - sqlite:///path/to/file.db       → SQLite (default)
 
 Design rationale:
-- SQLite is chosen for the MVP: zero-config, single-file, ships with Python.
-- The schema is intentionally normalized (museums + cities) to allow independent
-  updates and to model the one-to-many relationship (multiple museums per city).
-- For production scale, swap the connection string to PostgreSQL via SQLAlchemy
-  or similar — the interface (init_db / insert_* / query) stays the same.
+- SQLAlchemy Core (not ORM) keeps the abstraction thin — we define tables
+  declaratively but write queries as plain SQL expressions. This avoids
+  the cognitive overhead of an ORM while handling dialect differences
+  (SERIAL vs AUTOINCREMENT, ON CONFLICT syntax) transparently.
+- The same Python code works against both backends, so tests run on SQLite
+  in-memory while Docker Compose uses PostgreSQL.
 """
 
 from __future__ import annotations
 
 import logging
-import sqlite3
-from pathlib import Path
+import os
 from typing import Any
 
 import pandas as pd
+from sqlalchemy import (
+    Column,
+    ForeignKey,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    UniqueConstraint,
+    create_engine,
+    select,
+    text,
+)
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DB_PATH = Path("data/museums.db")
+DEFAULT_DATABASE_URL = "sqlite:///data/museums.db"
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS cities (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    country     TEXT NOT NULL,
-    population  INTEGER,
-    UNIQUE(name, country)
-);
+metadata = MetaData()
 
-CREATE TABLE IF NOT EXISTS museums (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    name            TEXT NOT NULL UNIQUE,
-    city_id         INTEGER NOT NULL REFERENCES cities(id),
-    visitors        INTEGER NOT NULL,
-    UNIQUE(name)
-);
-"""
+cities_table = Table(
+    "cities",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("name", String, nullable=False),
+    Column("country", String, nullable=False),
+    Column("population", Integer),
+    UniqueConstraint("name", "country"),
+)
 
-
-def get_connection(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+museums_table = Table(
+    "museums",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("name", String, nullable=False, unique=True),
+    Column("city_id", Integer, ForeignKey("cities.id"), nullable=False),
+    Column("visitors", Integer, nullable=False),
+)
 
 
-def init_db(conn: sqlite3.Connection) -> None:
-    conn.executescript(SCHEMA)
-    conn.commit()
+def get_engine(url: str | None = None) -> Engine:
+    """Create a SQLAlchemy engine from a URL or the DATABASE_URL env var."""
+    url = url or os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    return create_engine(url, echo=False)
 
 
-def upsert_city(conn: sqlite3.Connection, name: str, country: str, population: int | None) -> int:
+def init_db(engine: Engine) -> None:
+    """Create tables if they don't exist."""
+    metadata.create_all(engine)
+    logger.info("Database initialized (%s)", engine.url.drivername)
+
+
+def _upsert_city(conn, engine: Engine, name: str, country: str, population: int | None) -> int:
     """Insert or update a city, return its id."""
-    conn.execute(
-        """INSERT INTO cities (name, country, population) VALUES (?, ?, ?)
-           ON CONFLICT(name, country) DO UPDATE SET population = excluded.population""",
-        (name, country, population),
-    )
-    conn.commit()
-    cur = conn.execute("SELECT id FROM cities WHERE name = ? AND country = ?", (name, country))
-    return cur.fetchone()[0]
+    if engine.dialect.name == "postgresql":
+        stmt = (
+            pg_insert(cities_table)
+            .values(name=name, country=country, population=population)
+            .on_conflict_do_update(
+                constraint="cities_name_country_key",
+                set_={"population": population},
+            )
+            .returning(cities_table.c.id)
+        )
+        result = conn.execute(stmt)
+        return result.scalar_one()
+    else:
+        # SQLite
+        stmt = (
+            sqlite_insert(cities_table)
+            .values(name=name, country=country, population=population)
+            .on_conflict_do_update(
+                index_elements=["name", "country"],
+                set_={"population": population},
+            )
+        )
+        conn.execute(stmt)
+        row = conn.execute(
+            select(cities_table.c.id).where(
+                cities_table.c.name == name, cities_table.c.country == country
+            )
+        ).fetchone()
+        return row[0]
 
 
-def upsert_museum(conn: sqlite3.Connection, name: str, city_id: int, visitors: int) -> int:
-    conn.execute(
-        """INSERT INTO museums (name, city_id, visitors) VALUES (?, ?, ?)
-           ON CONFLICT(name) DO UPDATE SET city_id = excluded.city_id, visitors = excluded.visitors""",
-        (name, city_id, visitors),
-    )
-    conn.commit()
-    cur = conn.execute("SELECT id FROM museums WHERE name = ?", (name,))
-    return cur.fetchone()[0]
+def _upsert_museum(conn, engine: Engine, name: str, city_id: int, visitors: int) -> int:
+    if engine.dialect.name == "postgresql":
+        stmt = (
+            pg_insert(museums_table)
+            .values(name=name, city_id=city_id, visitors=visitors)
+            .on_conflict_do_update(
+                constraint="museums_name_key",
+                set_={"city_id": city_id, "visitors": visitors},
+            )
+            .returning(museums_table.c.id)
+        )
+        result = conn.execute(stmt)
+        return result.scalar_one()
+    else:
+        stmt = (
+            sqlite_insert(museums_table)
+            .values(name=name, city_id=city_id, visitors=visitors)
+            .on_conflict_do_update(
+                index_elements=["name"],
+                set_={"city_id": city_id, "visitors": visitors},
+            )
+        )
+        conn.execute(stmt)
+        row = conn.execute(
+            select(museums_table.c.id).where(museums_table.c.name == name)
+        ).fetchone()
+        return row[0]
 
 
-def load_museums(museums_data: list[dict[str, Any]], conn: sqlite3.Connection) -> None:
+def load_museums(museums_data: list[dict[str, Any]], engine: Engine) -> None:
     """Bulk-load museum data into the DB."""
-    for m in museums_data:
-        city_id = upsert_city(conn, m["city"], m["country"], m.get("city_population"))
-        upsert_museum(conn, m["name"], city_id, m["visitors"])
+    with engine.begin() as conn:
+        for m in museums_data:
+            city_id = _upsert_city(conn, engine, m["city"], m["country"], m.get("city_population"))
+            _upsert_museum(conn, engine, m["name"], city_id, m["visitors"])
     logger.info("Loaded %d museums into database", len(museums_data))
 
 
-def query_dataset(conn: sqlite3.Connection) -> pd.DataFrame:
+def query_dataset(engine: Engine) -> pd.DataFrame:
     """Return a joined DataFrame of museums + city population for analysis."""
-    query = """
+    query = text("""
         SELECT
             m.name       AS museum,
             c.name       AS city,
@@ -96,5 +159,6 @@ def query_dataset(conn: sqlite3.Connection) -> pd.DataFrame:
         JOIN cities c ON m.city_id = c.id
         WHERE c.population IS NOT NULL
         ORDER BY m.visitors DESC
-    """
-    return pd.read_sql_query(query, conn)
+    """)
+    with engine.connect() as conn:
+        return pd.read_sql_query(query, conn)

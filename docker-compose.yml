@@ -1,33 +1,67 @@
 # docker-compose.yml
 #
-# Two services:
-#   1. `pipeline` — runs the CLI to fetch data, build DB, and print regression summary.
-#   2. `notebook` — Jupyter server for interactive exploration.
+# Services:
+#   1. `postgres`  — PostgreSQL database
+#   2. `pipeline`  — CLI: fetches data, populates DB, prints regression summary
+#   3. `api`       — FastAPI service for querying data + predictions
+#   4. `notebook`  — Jupyter server for interactive exploration
 #
-# Shared volume `appdata` holds the SQLite database so both services see the same data.
-# Run: docker compose up pipeline && docker compose up notebook
+# Usage:
+#   docker compose up --build              # starts everything
+#   docker compose up --build pipeline     # run pipeline only
+#   curl http://localhost:8000/museums      # query the API
+#   open http://localhost:8888              # open Jupyter
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wikiapp
+      POSTGRES_PASSWORD: wikiapp
+      POSTGRES_DB: museums
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wikiapp -d museums"]
+      interval: 3s
+      retries: 10
+
   pipeline:
     build:
       context: .
       dockerfile: Dockerfile
-    volumes:
-      - appdata:/app/data
-    # Run the full pipeline; --verbose for debug output
-    command: ["--db-path", "/app/data/museums.db", "--verbose"]
+    environment:
+      DATABASE_URL: postgresql://wikiapp:wikiapp@postgres:5432/museums
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["--verbose"]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DATABASE_URL: postgresql://wikiapp:wikiapp@postgres:5432/museums
+    ports:
+      - "8000:8000"
+    depends_on:
+      pipeline:
+        condition: service_completed_successfully
 
   notebook:
     build:
       context: .
       dockerfile: Dockerfile.notebook
+    environment:
+      DATABASE_URL: postgresql://wikiapp:wikiapp@postgres:5432/museums
     ports:
       - "8888:8888"
-    volumes:
-      - appdata:/app/data
     depends_on:
       pipeline:
         condition: service_completed_successfully
 
 volumes:
-  appdata:
+  pgdata:
