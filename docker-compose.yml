@@ -1,0 +1,33 @@
+# docker-compose.yml
+#
+# Two services:
+#   1. `pipeline` — runs the CLI to fetch data, build DB, and print regression summary.
+#   2. `notebook` — Jupyter server for interactive exploration.
+#
+# Shared volume `appdata` holds the SQLite database so both services see the same data.
+# Run: docker compose up pipeline && docker compose up notebook
+
+services:
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - appdata:/app/data
+    # Run the full pipeline; --verbose for debug output
+    command: ["--db-path", "/app/data/museums.db", "--verbose"]
+
+  notebook:
+    build:
+      context: .
+      dockerfile: Dockerfile.notebook
+    ports:
+      - "8888:8888"
+    volumes:
+      - appdata:/app/data
+    depends_on:
+      pipeline:
+        condition: service_completed_successfully
+
+volumes:
+  appdata:

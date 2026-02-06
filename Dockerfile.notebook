@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+WORKDIR /app
+
+# Install wikiapp + notebook extras
+COPY pyproject.toml .
+COPY src/ src/
+RUN pip install --no-cache-dir ".[notebook]"
+
+# Copy notebooks
+COPY notebooks/ notebooks/
+
+# Pre-create data dir (shared volume mount point)
+RUN mkdir -p /app/data
+
+EXPOSE 8888
+CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser", \
+     "--allow-root", "--NotebookApp.token=''", "--notebook-dir=/app/notebooks"]
