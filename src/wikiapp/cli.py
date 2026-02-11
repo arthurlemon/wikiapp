@@ -21,15 +21,18 @@ from wikiapp.transform import build_feature_table
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="wikiapp CLI")
-    p.add_argument("-v", "--verbose", action="store_true")
+    # Shared flags available to every subcommand
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("-v", "--verbose", action="store_true")
+
+    p = argparse.ArgumentParser(description="wikiapp CLI", parents=[common])
     sub = p.add_subparsers(dest="command")
     sub.default = "run-all"
 
-    sub.add_parser("migrate-db", help="Run schema migrations")
+    sub.add_parser("migrate-db", help="Run schema migrations", parents=[common])
 
     for name in ("run-etl", "build-features", "train", "run-all"):
-        sp = sub.add_parser(name)
+        sp = sub.add_parser(name, parents=[common])
         sp.add_argument(
             "--orchestrate", action="store_true",
             help="Route through Prefect flows (requires wikiapp[orchestration])",

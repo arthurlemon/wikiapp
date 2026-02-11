@@ -34,6 +34,9 @@ class Settings:
             "WIKIPEDIA_USER_AGENT", "wikiapp/0.3 (museum-data-pipeline)"
         )
     )
+    wikidata_token: str | None = field(
+        default_factory=lambda: os.environ.get("WIKIDATA_TOKEN")
+    )
     visitor_threshold: int = 2_000_000
 
 

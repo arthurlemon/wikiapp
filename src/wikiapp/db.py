@@ -146,16 +146,22 @@ def migrate_db(database_url: str | None = None) -> None:
     url = database_url or settings.database_url
     engine = create_engine(url, echo=False)
 
-    # For SQLite, just create tables directly
+    # For SQLite, ensure parent directory exists, then create tables directly
     if make_url(url).drivername.startswith("sqlite"):
+        db_path = make_url(url).database
+        if db_path:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         metadata.create_all(engine)
         engine.dispose()
         return
 
     _ensure_pg_database(url)
 
-    project_root = Path(__file__).resolve().parents[2]
-    ini_path = project_root / "alembic.ini"
+    # Look for alembic.ini: first relative to source tree, then in cwd
+    # (cwd is needed when installed as a wheel, e.g. inside Docker)
+    ini_path = Path(__file__).resolve().parents[2] / "alembic.ini"
+    if not ini_path.exists():
+        ini_path = Path.cwd() / "alembic.ini"
     if not ini_path.exists():
         logger.warning("alembic.ini not found, falling back to create_all")
         metadata.create_all(engine)
@@ -167,7 +173,17 @@ def migrate_db(database_url: str | None = None) -> None:
 
     config = Config(str(ini_path))
     config.set_main_option("sqlalchemy.url", url)
-    command.upgrade(config, "head")
+
+    # If tables already exist (e.g. from a previous create_all fallback) but
+    # Alembic has no version tracked yet, stamp the current head so it doesn't
+    # try to re-create them.
+    has_version_table = engine.dialect.has_table(engine.connect(), "alembic_version")
+    has_data_tables = engine.dialect.has_table(engine.connect(), "museums_raw")
+    if has_data_tables and not has_version_table:
+        logger.info("Tables exist without alembic_version — stamping head")
+        command.stamp(config, "head")
+    else:
+        command.upgrade(config, "head")
     engine.dispose()
 
 

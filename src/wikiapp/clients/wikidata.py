@@ -49,7 +49,10 @@ _CURATED_POPULATION: dict[str, int] = {
 # ------------------------------------------------------------------
 
 def _headers() -> dict[str, str]:
-    return {"User-Agent": settings.wikipedia_user_agent, "Accept": "application/json"}
+    h = {"User-Agent": settings.wikipedia_user_agent, "Accept": "application/json"}
+    if settings.wikidata_token:
+        h["Authorization"] = f"Bearer {settings.wikidata_token}"
+    return h
 
 
 def _get_wikidata_item_id(wikipedia_title: str) -> str | None:

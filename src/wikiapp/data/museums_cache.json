@@ -1,200 +1,299 @@
 [
   {
-    "name": "Louvre",
+    "museum_name": "Louvre",
     "city": "Paris",
     "country": "France",
-    "visitors": 8900000
+    "annual_visitors": 8900000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Paris",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "National Museum of China",
+    "museum_name": "National Museum of China",
     "city": "Beijing",
     "country": "China",
-    "visitors": 7290000
+    "annual_visitors": 7290000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Beijing",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "Vatican Museums",
+    "museum_name": "Vatican Museums",
     "city": "Vatican City",
     "country": "Vatican City",
-    "visitors": 6770000
+    "annual_visitors": 6770000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Vatican_City",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "Natural History Museum",
+    "museum_name": "Natural History Museum",
     "city": "London",
     "country": "United Kingdom",
-    "visitors": 5810000
+    "annual_visitors": 5810000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "London",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "British Museum",
+    "museum_name": "British Museum",
     "city": "London",
     "country": "United Kingdom",
-    "visitors": 5820000
+    "annual_visitors": 5820000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "London",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "Tate Modern",
+    "museum_name": "Tate Modern",
     "city": "London",
     "country": "United Kingdom",
-    "visitors": 5570000
+    "annual_visitors": 5570000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "London",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "National Gallery",
-    "city": "London",
-    "country": "United Kingdom",
-    "visitors": 5250000
-  },
-  {
-    "name": "The Metropolitan Museum of Art",
+    "museum_name": "The Metropolitan Museum of Art",
     "city": "New York City",
     "country": "United States",
-    "visitors": 5360000
+    "annual_visitors": 5360000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "New_York_City",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "National Gallery of Art",
-    "city": "Washington, D.C.",
-    "country": "United States",
-    "visitors": 4210000
+    "museum_name": "National Gallery",
+    "city": "London",
+    "country": "United Kingdom",
+    "annual_visitors": 5250000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "London",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "State Hermitage Museum",
-    "city": "Saint Petersburg",
-    "country": "Russia",
-    "visitors": 3570000
-  },
-  {
-    "name": "Shanghai Science and Technology Museum",
+    "museum_name": "Shanghai Science and Technology Museum",
     "city": "Shanghai",
     "country": "China",
-    "visitors": 4820000
+    "annual_visitors": 4820000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Shanghai",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "National Museum of Natural History",
+    "museum_name": "National Gallery of Art",
     "city": "Washington, D.C.",
     "country": "United States",
-    "visitors": 4200000
+    "annual_visitors": 4210000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Washington,_D.C.",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "National Air and Space Museum",
+    "museum_name": "National Museum of Natural History",
     "city": "Washington, D.C.",
     "country": "United States",
-    "visitors": 3200000
+    "annual_visitors": 4200000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Washington,_D.C.",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "Victoria and Albert Museum",
-    "city": "London",
-    "country": "United Kingdom",
-    "visitors": 4000000
-  },
-  {
-    "name": "Science Museum",
-    "city": "London",
-    "country": "United Kingdom",
-    "visitors": 3300000
-  },
-  {
-    "name": "Mus\u00e9e d'Orsay",
-    "city": "Paris",
-    "country": "France",
-    "visitors": 3270000
-  },
-  {
-    "name": "Centre Pompidou",
-    "city": "Paris",
-    "country": "France",
-    "visitors": 3010000
-  },
-  {
-    "name": "National Palace Museum",
-    "city": "Taipei",
-    "country": "Taiwan",
-    "visitors": 3830000
-  },
-  {
-    "name": "Reina Sof\u00eda",
-    "city": "Madrid",
-    "country": "Spain",
-    "visitors": 3900000
-  },
-  {
-    "name": "Museo del Prado",
-    "city": "Madrid",
-    "country": "Spain",
-    "visitors": 3200000
-  },
-  {
-    "name": "National Museum of Korea",
-    "city": "Seoul",
-    "country": "South Korea",
-    "visitors": 3350000
-  },
-  {
-    "name": "Zhejiang Museum",
-    "city": "Hangzhou",
-    "country": "China",
-    "visitors": 3600000
-  },
-  {
-    "name": "China Science Technology Museum",
-    "city": "Beijing",
-    "country": "China",
-    "visitors": 3880000
-  },
-  {
-    "name": "National Museum of American History",
-    "city": "Washington, D.C.",
-    "country": "United States",
-    "visitors": 2800000
-  },
-  {
-    "name": "Rijksmuseum",
-    "city": "Amsterdam",
-    "country": "Netherlands",
-    "visitors": 2700000
-  },
-  {
-    "name": "Van Gogh Museum",
-    "city": "Amsterdam",
-    "country": "Netherlands",
-    "visitors": 2160000
-  },
-  {
-    "name": "Nanjing Museum",
+    "museum_name": "Nanjing Museum",
     "city": "Nanjing",
     "country": "China",
-    "visitors": 4170000
+    "annual_visitors": 4170000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Nanjing",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "National Gallery of Victoria",
-    "city": "Melbourne",
-    "country": "Australia",
-    "visitors": 3200000
-  },
-  {
-    "name": "Somerset House",
+    "museum_name": "Victoria and Albert Museum",
     "city": "London",
     "country": "United Kingdom",
-    "visitors": 3200000
+    "annual_visitors": 4000000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "London",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "Acropolis Museum",
-    "city": "Athens",
-    "country": "Greece",
-    "visitors": 2100000
+    "museum_name": "Reina Sof\u00eda",
+    "city": "Madrid",
+    "country": "Spain",
+    "annual_visitors": 3900000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Madrid",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "Uffizi Galleries",
-    "city": "Florence",
-    "country": "Italy",
-    "visitors": 2100000
+    "museum_name": "China Science Technology Museum",
+    "city": "Beijing",
+    "country": "China",
+    "annual_visitors": 3880000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Beijing",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "Tokyo National Museum",
-    "city": "Tokyo",
-    "country": "Japan",
-    "visitors": 2300000
+    "museum_name": "National Palace Museum",
+    "city": "Taipei",
+    "country": "Taiwan",
+    "annual_visitors": 3830000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Taipei",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   },
   {
-    "name": "American Museum of Natural History",
+    "museum_name": "Zhejiang Museum",
+    "city": "Hangzhou",
+    "country": "China",
+    "annual_visitors": 3600000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Hangzhou",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "State Hermitage Museum",
+    "city": "Saint Petersburg",
+    "country": "Russia",
+    "annual_visitors": 3570000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Saint_Petersburg",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "National Museum of Korea",
+    "city": "Seoul",
+    "country": "South Korea",
+    "annual_visitors": 3350000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Seoul",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Science Museum",
+    "city": "London",
+    "country": "United Kingdom",
+    "annual_visitors": 3300000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "London",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Mus\u00e9e d'Orsay",
+    "city": "Paris",
+    "country": "France",
+    "annual_visitors": 3270000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Paris",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "National Gallery of Victoria",
+    "city": "Melbourne",
+    "country": "Australia",
+    "annual_visitors": 3200000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Melbourne",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Museo del Prado",
+    "city": "Madrid",
+    "country": "Spain",
+    "annual_visitors": 3200000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Madrid",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Somerset House",
+    "city": "London",
+    "country": "United Kingdom",
+    "annual_visitors": 3200000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "London",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "National Air and Space Museum",
+    "city": "Washington, D.C.",
+    "country": "United States",
+    "annual_visitors": 3200000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Washington,_D.C.",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "American Museum of Natural History",
     "city": "New York City",
     "country": "United States",
-    "visitors": 3100000
+    "annual_visitors": 3100000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "New_York_City",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Centre Pompidou",
+    "city": "Paris",
+    "country": "France",
+    "annual_visitors": 3010000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Paris",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "National Museum of American History",
+    "city": "Washington, D.C.",
+    "country": "United States",
+    "annual_visitors": 2800000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Washington,_D.C.",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Rijksmuseum",
+    "city": "Amsterdam",
+    "country": "Netherlands",
+    "annual_visitors": 2700000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Amsterdam",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Tokyo National Museum",
+    "city": "Tokyo",
+    "country": "Japan",
+    "annual_visitors": 2300000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Tokyo",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Van Gogh Museum",
+    "city": "Amsterdam",
+    "country": "Netherlands",
+    "annual_visitors": 2160000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Amsterdam",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Acropolis Museum",
+    "city": "Athens",
+    "country": "Greece",
+    "annual_visitors": 2100000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Athens",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
+  },
+  {
+    "museum_name": "Uffizi Galleries",
+    "city": "Florence",
+    "country": "Italy",
+    "annual_visitors": 2100000,
+    "attendance_year": 2024,
+    "city_wikipedia_title": "Florence",
+    "source_url": "https://en.wikipedia.org/wiki/List_of_most_visited_museums"
   }
 ]

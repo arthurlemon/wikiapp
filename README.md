@@ -1,10 +1,26 @@
 # Museum Visitor Analysis
 
-Correlates annual museum attendance with city population for the world's most-visited museums (>2M visitors/year), using Wikipedia and Wikidata as data sources.
+Hello, thank you for your time looking at this code!
 
-## Quick Start
+## Overview
 
-### Docker (recommended)
+This is an end-to-end data pipeline that pulls museum attendance from Wikipedia and city population from Wikidata, joins them, trains a simple linear regression, and serves predictions through a REST API.
+
+I went with a **bronze/silver table pattern** — raw ingested data stays untouched in `museums_raw` and `city_population_raw`, while the cleaned join lands in `museum_city_features`. This way, we can always reprocess from raw without re-fetching.
+
+For the database layer, I chose **SQLAlchemy with dual-backend support**: PostgreSQL for Docker/production (with Alembic migrations) and SQLite for local dev and tests (zero setup, just `wikiapp run-all`). The trade-off is two upsert paths, but SQLAlchemy abstracts most of it away.
+
+I used **`uv`** as the package manager — it's fast. The Docker build uses `uv build --wheel` in a multi-stage setup so the final image stays slim.
+
+The Wikipedia HTML parsing uses **BeautifulSoup** since the table format varies enough that regex would be fragile. Both API clients have **offline fallbacks** (a bundled JSON snapshot for museums, a curated lookup dict for populations) so the pipeline always produces results even if apis are not returning results.
+
+I added a simple **Prefect orchestration as optional** mostly as illustrative purposes — it's useful for scheduling and observability but adds ~200MB of dependencies, so it only installs with `pip install -e ".[orchestration]"`.
+
+The **FastAPI** layer is minimal (three endpoints), again mostly for illustrative purposes.
+
+## Reproducing results
+
+### Option 1. Docker
 
 ```bash
 docker compose up --build
