@@ -10,7 +10,7 @@ from prefect import flow, task
 
 from wikiapp.db import migrate_db
 from wikiapp.etl import enrich_population, get_distinct_city_titles, ingest_museums
-from wikiapp.model import train
+from wikiapp.train import train
 from wikiapp.transform import build_feature_table
 
 

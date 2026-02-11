@@ -1,12 +1,7 @@
 """Database layer — SQLAlchemy engine, sessions, and Alembic migrations.
 
-Supports PostgreSQL (Docker / production) and SQLite (local dev / tests).
-Backend is selected via DATABASE_URL env var; defaults to SQLite.
-
-For tests, call ``init_db_tables(engine)`` which runs ``metadata.create_all``
-directly (no Alembic needed, works with in-memory SQLite).
-
-For production, call ``migrate_db()`` which runs Alembic migrations.
+PostgreSQL only. Backend is configured via DATABASE_URL env var or
+individual POSTGRES_* vars (see config.py).
 """
 
 from __future__ import annotations
@@ -21,7 +16,6 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
-    Integer,
     MetaData,
     String,
     Table,
@@ -41,18 +35,17 @@ logger = logging.getLogger(__name__)
 metadata = MetaData()
 
 # ------------------------------------------------------------------
-# Schema declaration (used by both create_all and as documentation;
-# Alembic migration is the source of truth for production).
+# Schema declaration (Alembic migration is the source of truth).
 # ------------------------------------------------------------------
 
 museums_raw = Table(
     "museums_raw", metadata,
-    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
     Column("museum_name", Text, nullable=False),
     Column("city", Text),
     Column("country", Text),
     Column("annual_visitors", BigInteger),
-    Column("attendance_year", Integer),
+    Column("attendance_year", BigInteger),
     Column("city_wikipedia_title", Text),
     Column("source_url", Text),
     Column("ingested_at", DateTime(timezone=True), server_default=func.current_timestamp()),
@@ -60,7 +53,7 @@ museums_raw = Table(
 
 city_population_raw = Table(
     "city_population_raw", metadata,
-    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
     Column("city", Text, nullable=False),
     Column("country", Text),
     Column("city_wikipedia_title", Text),
@@ -73,12 +66,12 @@ city_population_raw = Table(
 
 museum_city_features = Table(
     "museum_city_features", metadata,
-    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
     Column("museum_name", Text, nullable=False),
     Column("city", Text),
     Column("country", Text),
     Column("annual_visitors", BigInteger),
-    Column("attendance_year", Integer),
+    Column("attendance_year", BigInteger),
     Column("population", BigInteger),
     Column("population_as_of", Date),
     Column("created_at", DateTime(timezone=True), server_default=func.current_timestamp()),
@@ -86,7 +79,7 @@ museum_city_features = Table(
 
 model_registry = Table(
     "model_registry", metadata,
-    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
     Column("model_version", String(64), nullable=False, unique=True),
     Column("artifact_path", Text, nullable=False),
     Column("r2", Float),
@@ -103,7 +96,7 @@ _engine: Engine | None = None
 
 
 def get_engine(url: str | None = None) -> Engine:
-    """Return a (cached) engine.  Tests can pass an explicit URL."""
+    """Return a (cached) engine."""
     global _engine
     if url:
         return create_engine(url, echo=False)
@@ -136,24 +129,10 @@ def get_session(engine: Engine | None = None):
 # Schema management
 # ------------------------------------------------------------------
 
-def init_db_tables(engine: Engine) -> None:
-    """Create all tables directly (for tests / SQLite local dev)."""
-    metadata.create_all(engine)
-
-
 def migrate_db(database_url: str | None = None) -> None:
-    """Run Alembic migrations for PostgreSQL, or create_all for SQLite."""
+    """Run Alembic migrations against PostgreSQL."""
     url = database_url or settings.database_url
     engine = create_engine(url, echo=False)
-
-    # For SQLite, ensure parent directory exists, then create tables directly
-    if make_url(url).drivername.startswith("sqlite"):
-        db_path = make_url(url).database
-        if db_path:
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        metadata.create_all(engine)
-        engine.dispose()
-        return
 
     _ensure_pg_database(url)
 

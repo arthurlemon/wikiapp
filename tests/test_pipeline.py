@@ -1,20 +1,10 @@
-"""End-to-end tests using SQLite in-memory — no PostgreSQL needed."""
+"""Unit tests that don't require a database connection."""
 
 from __future__ import annotations
 
-import pandas as pd
-from sqlalchemy import create_engine, text
-
-from wikiapp import db
 from wikiapp.clients.wikipedia import _bundled_snapshot, fetch_museums, parse_museums_from_html
 from wikiapp.clients.wikidata import get_city_population, _CURATED_POPULATION
 from wikiapp.config import settings
-
-
-def _engine():
-    e = create_engine("sqlite://")
-    db.init_db_tables(e)
-    return e
 
 
 # ---- Wikipedia client ----
@@ -73,76 +63,3 @@ def test_curated_population_fallback():
 def test_unknown_city_returns_none():
     result = get_city_population("Nonexistent_Place_XYZ")
     assert result is None
-
-
-# ---- Database ----
-
-def test_db_tables_created():
-    e = _engine()
-    with e.connect() as conn:
-        tables = conn.execute(text(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )).fetchall()
-    names = {r[0] for r in tables}
-    assert "museums_raw" in names
-    assert "city_population_raw" in names
-    assert "museum_city_features" in names
-    assert "model_registry" in names
-    e.dispose()
-
-
-# ---- ETL + Transform + Train (integration) ----
-
-def test_full_pipeline_sqlite():
-    """End-to-end: ingest → enrich → transform → train on SQLite."""
-    e = _engine()
-
-    # Simulate ingest: insert bundled snapshot into museums_raw
-    museums = _bundled_snapshot()
-    with db.get_session(e) as session:
-        for m in museums:
-            session.execute(text("""
-                INSERT INTO museums_raw
-                    (museum_name, city, country, annual_visitors,
-                     attendance_year, city_wikipedia_title, source_url)
-                VALUES
-                    (:museum_name, :city, :country, :annual_visitors,
-                     :attendance_year, :city_wikipedia_title, :source_url)
-            """), m)
-
-    # Simulate population enrichment using curated data
-    with db.get_session(e) as session:
-        for title, pop in _CURATED_POPULATION.items():
-            session.execute(text("""
-                INSERT INTO city_population_raw
-                    (city, city_wikipedia_title, population)
-                VALUES (:city, :title, :pop)
-            """), {"city": title.replace("_", " "), "title": title, "pop": pop})
-
-    # Build features
-    from wikiapp.transform import build_feature_table
-    n = build_feature_table(e)
-    assert n > 15
-
-    # Verify feature table
-    with db.get_session(e) as session:
-        df = pd.read_sql(
-            text("SELECT * FROM museum_city_features"), session.connection()
-        )
-    assert len(df) > 15
-    assert "population" in df.columns
-    assert "annual_visitors" in df.columns
-
-    # Train model
-    from wikiapp.model import train, load_latest_model
-    result = train(e)
-    assert result.r2 is not None
-    assert result.n_samples > 15
-
-    # Load model back
-    model, version = load_latest_model(e)
-    assert version == result.model_version
-    pred = model.predict([[10_000_000]])
-    assert pred[0] > 0
-
-    e.dispose()

@@ -1,7 +1,7 @@
 """Centralised settings resolved from environment variables.
 
-Falls back to SQLite when DATABASE_URL is not set, enabling zero-config
-local development while Docker Compose injects the PostgreSQL URL.
+Requires PostgreSQL — set DATABASE_URL or individual POSTGRES_* vars.
+Docker Compose provides these automatically.
 """
 
 from __future__ import annotations
@@ -15,14 +15,12 @@ def _default_database_url() -> str:
     if explicit:
         return explicit
     # Allow composing from individual PG vars (Docker Compose pattern)
-    user = os.environ.get("POSTGRES_USER")
-    if user:
-        pw = os.environ.get("POSTGRES_PASSWORD", "")
-        host = os.environ.get("POSTGRES_HOST", "localhost")
-        port = os.environ.get("POSTGRES_PORT", "5432")
-        db = os.environ.get("POSTGRES_DB", "wikiapp")
-        return f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{db}"
-    return "sqlite:///data/museums.db"
+    user = os.environ.get("POSTGRES_USER", "wikiapp")
+    pw = os.environ.get("POSTGRES_PASSWORD", "wikiapp")
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    port = os.environ.get("POSTGRES_PORT", "5432")
+    db = os.environ.get("POSTGRES_DB", "museums")
+    return f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{db}"
 
 
 @dataclass(frozen=True)

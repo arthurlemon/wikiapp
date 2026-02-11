@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 
 from wikiapp.db import get_engine, get_session
-from wikiapp.model import load_latest_model, summary_from_db
+from wikiapp.train import load_latest_model, summary_from_db
 from wikiapp.schemas import MuseumOut, PredictRequest, PredictResponse, RegressionOut
 
 app = FastAPI(title="Museum Visitor Analysis API", version="0.3.0")

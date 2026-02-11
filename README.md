@@ -1,22 +1,22 @@
 # Museum Visitor Analysis
 
-Hello, thank you for your time looking at this code!
+Hello dear reviewer, thank you for taking some time to look at my work !
 
 ## Overview
 
 This is an end-to-end data pipeline that pulls museum attendance from Wikipedia and city population from Wikidata, joins them, trains a simple linear regression, and serves predictions through a REST API.
 
-I went with a **bronze/silver table pattern** — raw ingested data stays untouched in `museums_raw` and `city_population_raw`, while the cleaned join lands in `museum_city_features`. This way, we can always reprocess from raw without re-fetching.
+I went with a standard **bronze/silver table pattern**: raw ingested data stays untouched in `museums_raw` and `city_population_raw`, while the cleaned join lands in `museum_city_features`.
 
-For the database layer, I chose **SQLAlchemy with dual-backend support**: PostgreSQL for Docker/production (with Alembic migrations) and SQLite for local dev and tests (zero setup, just `wikiapp run-all`). The trade-off is two upsert paths, but SQLAlchemy abstracts most of it away.
+For the database layer, I went with **PostgreSQL + SQLAlchemy + Alembic** for versioned migrations.
 
 I used **`uv`** as the package manager — it's fast. The Docker build uses `uv build --wheel` in a multi-stage setup so the final image stays slim.
 
 The Wikipedia HTML parsing uses **BeautifulSoup** since the table format varies enough that regex would be fragile. Both API clients have **offline fallbacks** (a bundled JSON snapshot for museums, a curated lookup dict for populations) so the pipeline always produces results even if apis are not returning results.
 
-I added a simple **Prefect orchestration as optional** mostly as illustrative purposes — it's useful for scheduling and observability but adds ~200MB of dependencies, so it only installs with `pip install -e ".[orchestration]"`.
+I added a simple **Prefect orchestration as optional** mostly as illustrative purposes on one way to deploy and schedule the pipelines.
 
-The **FastAPI** layer is minimal (three endpoints), again mostly for illustrative purposes.
+Finally I added a minimal **FastAPI** layer, again mostly for illustrative purposes on how we could serve the model.
 
 ## Reproducing results
 
@@ -30,26 +30,8 @@ docker compose up --build
 |---------|-----|---------|
 | `postgres` | localhost:5432 | PostgreSQL 16 |
 | `pipeline` | (runs once) | ETL + feature build + model training |
-| `api` | http://localhost:8000 | REST API (OpenAPI docs at /docs) |
-| `notebook` | http://localhost:8888 | Jupyter notebook |
-
-### Local (no Docker, uses SQLite)
-
-```bash
-make setup          # pip install -e .[dev]
-make run-all        # full pipeline on SQLite
-make api            # start API server
-make test           # run test suite
-```
-
-Or step-by-step:
-
-```bash
-wikiapp migrate-db
-wikiapp run-etl
-wikiapp build-features
-wikiapp train
-```
+| `api` | <http://localhost:8000> | REST API (OpenAPI docs at /docs) |
+| `notebook` | <http://localhost:8888> | Jupyter notebook |
 
 ### With Prefect orchestration (optional)
 
@@ -79,7 +61,7 @@ src/wikiapp/
 ├── db.py               # SQLAlchemy engine, sessions, Alembic migrations
 ├── etl.py              # Ingest museums + enrich population → raw tables
 ├── transform.py        # Join raw tables → museum_city_features
-├── model.py            # Train, persist (joblib), register in model_registry
+├── train.py            # Train, persist (joblib), register in model_registry
 ├── pipelines.py        # Optional Prefect flows
 ├── api.py              # FastAPI (museums, regression, predict)
 ├── schemas.py          # Pydantic request/response models
@@ -106,14 +88,14 @@ Wikidata API  → city_population_raw (bronze)
 - **museum_city_features** — joined analytical table for ML
 - **model_registry** — versioned model metadata (R², RMSE, MAE, artifact path)
 
-Managed by Alembic (PostgreSQL) or create_all (SQLite).
+Managed by Alembic migrations.
 
 ## Design Decisions
 
 | Decision | Rationale | Trade-off |
 |----------|-----------|-----------|
-| **PostgreSQL + SQLite dual-backend** | PG for Docker/prod (concurrent access), SQLite for local dev and tests (zero config) | Two upsert paths; mitigated by SQLAlchemy abstraction |
-| **Alembic migrations** | Versioned, replayable schema changes for production | Extra file overhead; SQLite falls back to create_all |
+| **PostgreSQL only** | Single backend simplifies upsert logic, migrations, and deployment | Requires Docker or a PG instance for all environments |
+| **Alembic migrations** | Versioned, replayable schema changes | Extra file overhead vs. plain create_all |
 | **Wikidata P1082 for population** | Structured, auto-updating, the canonical source | API may be slow/unreachable; curated lookup as fallback |
 | **Bundled data fallback** | Pipeline always works offline (CI, air-gapped) | Snapshot goes stale; refreshed when API is reachable |
 | **Bronze/silver table pattern** | Clean data lineage; raw tables preserved for reprocessing | More tables than a single normalized schema |
@@ -146,7 +128,7 @@ Managed by Alembic (PostgreSQL) or create_all (SQLite).
 ## Testing
 
 ```bash
-make test   # or: python -m pytest -v
+python -m pytest -v
 ```
 
-All tests run on SQLite in-memory — no PostgreSQL or external APIs needed.
+Tests cover the Wikipedia/Wikidata clients and data parsing — no database connection needed.

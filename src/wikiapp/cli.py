@@ -2,7 +2,7 @@
 to route execution through Prefect flows (requires wikiapp[orchestration]).
 
 Subcommands:
-  migrate-db      Run schema migrations (Alembic for PG, create_all for SQLite)
+  migrate-db      Run Alembic schema migrations
   run-etl         Fetch museums + enrich city population
   build-features  Join raw tables into the feature table
   train           Train + persist a linear regression model
@@ -16,7 +16,7 @@ import logging
 
 from wikiapp.db import migrate_db
 from wikiapp.etl import enrich_population, get_distinct_city_titles, ingest_museums
-from wikiapp.model import train
+from wikiapp.train import train
 from wikiapp.transform import build_feature_table
 
 
