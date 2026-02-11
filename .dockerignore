@@ -1,0 +1,19 @@
+.git
+.gitignore
+.venv
+.mypy_cache
+.pytest_cache
+.claude
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.ipynb_checkpoints
+
+tests/
+artifacts/
+
+.env
+.env.*
+
+List of most-visited museums - Wikipedia.html

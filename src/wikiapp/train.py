@@ -1,10 +1,13 @@
-"""Linear regression with artifact persistence and model registry.
+"""Log-log linear regression with artifact persistence and model registry.
 
 Each training run:
 1. Reads the feature table.
-2. Fits a LinearRegression (population → visitors).
+2. Fits a LinearRegression on log(population) → log(visitors).
 3. Saves the model as a joblib artifact.
 4. Records version + metrics in the model_registry table.
+
+The log-log transform models a power-law relationship:
+  visitors = e^intercept * population^coef
 
 The API loads the latest registered model for serving predictions.
 """
@@ -43,7 +46,7 @@ class TrainResult:
 
 
 def train(engine: Engine | None = None) -> TrainResult:
-    """Train a linear regression and persist the artifact."""
+    """Train a log-log linear regression and persist the artifact."""
     with get_session(engine) as session:
         df = pd.read_sql(
             text("SELECT population, annual_visitors FROM museum_city_features"),
@@ -53,22 +56,27 @@ def train(engine: Engine | None = None) -> TrainResult:
     if df.empty:
         raise ValueError("No training data in museum_city_features")
 
-    X = df[["population"]].to_numpy(dtype=float)
-    y = df["annual_visitors"].to_numpy(dtype=float)
+    X_raw = df[["population"]].to_numpy(dtype=float)
+    y_raw = df["annual_visitors"].to_numpy(dtype=float)
+
+    # Log-log transform
+    log_X = np.log(X_raw)
+    log_y = np.log(y_raw)
 
     model = LinearRegression()
-    model.fit(X, y)
-    y_pred = model.predict(X)
+    model.fit(log_X, log_y)
 
-    r2 = float(r2_score(y, y_pred))
-    rmse = float(np.sqrt(mean_squared_error(y, y_pred)))
-    mae = float(mean_absolute_error(y, y_pred))
+    # Metrics in original space for interpretability
+    y_pred = np.exp(model.predict(log_X))
+    r2 = float(r2_score(y_raw, y_pred))
+    rmse = float(np.sqrt(mean_squared_error(y_raw, y_pred)))
+    mae = float(mean_absolute_error(y_raw, y_pred))
 
     # Save artifact
     version = datetime.now(tz=timezone.utc).strftime("%Y%m%d%H%M%S")
     artifacts_dir = Path(settings.artifacts_dir)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    artifact_path = str(artifacts_dir / f"linear_regression_{version}.joblib")
+    artifact_path = str(artifacts_dir / f"log_regression_{version}.joblib")
     joblib.dump(model, artifact_path)
 
     # Register in DB
@@ -87,10 +95,10 @@ def train(engine: Engine | None = None) -> TrainResult:
         coef=float(model.coef_[0]),
         intercept=float(model.intercept_),
         r2=r2, rmse=rmse, mae=mae,
-        n_samples=len(y),
+        n_samples=len(y_raw),
     )
     logger.info("Trained model v%s: R²=%.4f RMSE=%.0f MAE=%.0f (n=%d)",
-                version, r2, rmse, mae, len(y))
+                version, r2, rmse, mae, len(y_raw))
     return result
 
 

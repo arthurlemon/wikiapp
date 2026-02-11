@@ -13,6 +13,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from urllib.parse import unquote
 
 import requests
 from bs4 import BeautifulSoup
@@ -50,15 +51,32 @@ def _fetch_html() -> str:
 # ------------------------------------------------------------------
 
 def _extract_int(raw: str) -> int | None:
-    digits = re.sub(r"[^\d]", "", str(raw))
+    """Extract visitor count from a string, stopping at parentheses/brackets.
+
+    Handles both numeric formats (``9,000,000``) and text formats
+    (``5.7 million``).
+    """
+    # Take only the part before any '(' or '[' so year/refs aren't included
+    clean = re.split(r"[(\[]", str(raw))[0]
+    # Handle "X.Y million" format
+    m = re.match(r"[\s]*([0-9]+(?:\.[0-9]+)?)\s*million", clean, re.IGNORECASE)
+    if m:
+        return int(float(m.group(1)) * 1_000_000)
+    digits = re.sub(r"[^\d]", "", clean)
     return int(digits) if digits else None
+
+
+def _extract_year(raw: str) -> int | None:
+    """Extract a 4-digit year from parenthesized text like '(2024)' or '(FY 2024-25)'."""
+    match = re.search(r"\((?:FY\s+)?(\d{4})", str(raw))
+    return int(match.group(1)) if match else None
 
 
 def _normalize_city_title(cell) -> str | None:
     """Extract Wikipedia page title from a <td> cell, preferring <a href>."""
     anchor = cell.find("a", href=re.compile(r"^/wiki/"))
     if anchor and anchor.get("href", "").startswith("/wiki/"):
-        return anchor["href"].replace("/wiki/", "", 1)
+        return unquote(anchor["href"].replace("/wiki/", "", 1))
     text = re.sub(r"\[.*?\]", "", cell.get_text(" ", strip=True)).split(",")[0].strip()
     return text.replace(" ", "_") if text else None
 
@@ -112,12 +130,17 @@ def parse_museums_from_html(html: str) -> list[dict]:
         if not name:
             continue
 
+        visitor_text = cols[vi].get_text(" ", strip=True)
         rows.append({
             "museum_name": name,
             "city": cols[ci].get_text(" ", strip=True),
             "country": cols[co].get_text(" ", strip=True) if co is not None and co < len(cols) else None,
-            "annual_visitors": _extract_int(cols[vi].get_text(" ", strip=True)),
-            "attendance_year": _extract_int(cols[yi].get_text(" ", strip=True)) if yi is not None and yi < len(cols) else None,
+            "annual_visitors": _extract_int(visitor_text),
+            "attendance_year": (
+                _extract_int(cols[yi].get_text(" ", strip=True))
+                if yi is not None and yi < len(cols)
+                else _extract_year(visitor_text)
+            ),
             "city_wikipedia_title": _normalize_city_title(cols[ci]),
             "source_url": SOURCE_URL,
         })

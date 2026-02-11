@@ -62,7 +62,7 @@ def regression():
         ).scalar()
 
     return RegressionOut(
-        equation=f"visitors = {coef:.4f} * population + {intercept:.0f}",
+        equation=f"log(visitors) = {coef:.4f} * log(population) + {intercept:.4f}",
         coefficient=coef,
         intercept=intercept,
         r_squared=summary["r2"],
@@ -82,7 +82,8 @@ def predict(req: PredictRequest):
     except ValueError as exc:
         raise HTTPException(503, str(exc)) from exc
 
-    predicted = model.predict(np.array([[req.population]], dtype=float))[0]
+    log_pred = model.predict(np.array([[np.log(req.population)]], dtype=float))[0]
+    predicted = np.exp(log_pred)
     return PredictResponse(
         population=req.population,
         predicted_visitors=max(0, int(predicted)),

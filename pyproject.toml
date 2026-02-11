@@ -24,7 +24,7 @@ dependencies = [
 [project.optional-dependencies]
 api = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 orchestration = ["prefect>=3.0"]
-notebook = ["jupyter>=1.0", "ipykernel>=6.0"]
+notebook = ["jupyterlab>=4.0", "jupytext>=1.19.1"]
 dev = ["pytest>=7.0", "ruff>=0.1"]
 
 [project.scripts]

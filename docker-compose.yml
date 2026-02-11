@@ -1,66 +1,41 @@
-# docker-compose.yml
-#
 # Usage:
 #   docker compose up --build              # starts everything
-#   curl http://localhost:8000/museums      # query the API
-#   open http://localhost:8888              # Jupyter notebook
+
+x-app: &app
+  build: .
+  environment:
+    DATABASE_URL: postgresql+psycopg2://wikiapp:wikiapp@postgres:5432/museums
+    ARTIFACTS_DIR: /app/artifacts
+  volumes: [artifacts:/app/artifacts]
 
 services:
   postgres:
     image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: wikiapp
-      POSTGRES_PASSWORD: wikiapp
-      POSTGRES_DB: museums
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+    environment: { POSTGRES_USER: wikiapp, POSTGRES_PASSWORD: wikiapp, POSTGRES_DB: museums }
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wikiapp -d museums"]
       interval: 3s
       retries: 10
 
   pipeline:
-    build: .
-    environment:
-      DATABASE_URL: postgresql+psycopg2://wikiapp:wikiapp@postgres:5432/museums
-      ARTIFACTS_DIR: /app/artifacts
-    volumes:
-      - artifacts:/app/artifacts
-    depends_on:
-      postgres:
-        condition: service_healthy
+    <<: *app
+    depends_on: { postgres: { condition: service_healthy } }
     command: ["run-all", "--verbose"]
 
   api:
-    build: .
-    environment:
-      DATABASE_URL: postgresql+psycopg2://wikiapp:wikiapp@postgres:5432/museums
-      ARTIFACTS_DIR: /app/artifacts
-    ports:
-      - "8000:8000"
-    volumes:
-      - artifacts:/app/artifacts
-    depends_on:
-      pipeline:
-        condition: service_completed_successfully
+    <<: *app
+    ports: ["8000:8000"]
+    depends_on: { pipeline: { condition: service_completed_successfully } }
     entrypoint: ["uvicorn", "wikiapp.api:app", "--host", "0.0.0.0", "--port", "8000"]
 
   notebook:
-    build: .
-    environment:
-      DATABASE_URL: postgresql+psycopg2://wikiapp:wikiapp@postgres:5432/museums
-      ARTIFACTS_DIR: /app/artifacts
-    ports:
-      - "8888:8888"
-    volumes:
-      - artifacts:/app/artifacts
-    depends_on:
-      pipeline:
-        condition: service_completed_successfully
-    entrypoint: ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser",
-                  "--allow-root", "--NotebookApp.token=''", "--notebook-dir=/app/notebooks"]
+    <<: *app
+    ports: ["8888:8888"]
+    depends_on: { pipeline: { condition: service_completed_successfully } }
+    entrypoint: ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser",
+                  "--allow-root", "--ServerApp.token=''", "--notebook-dir=/app/notebooks"]
 
 volumes:
   pgdata:

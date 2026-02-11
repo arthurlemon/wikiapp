@@ -1,18 +1,28 @@
-# Shared base image for pipeline, API, and notebook.
+# syntax=docker/dockerfile:1.7
+
+# Build the project wheel once.
 FROM python:3.11-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /build
 COPY pyproject.toml uv.lock ./
 COPY src/ src/
-RUN uv build --wheel
+RUN --mount=type=cache,target=/root/.cache/uv uv build --wheel
 
 FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
-COPY --from=builder /build/dist/*.whl /tmp/
 
-# Install with api + notebook extras (covers all services)
-RUN whl=$(ls /tmp/wikiapp-*.whl) && uv pip install --system --no-cache "${whl}[api,notebook]" && rm /tmp/*.whl
+# Install deps from the lockfile first (best cache hit and reproducibility).
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv export --frozen --format requirements-txt --all-extras --no-dev --no-emit-project -o /tmp/requirements.txt \
+    && uv pip install --system --no-cache -r /tmp/requirements.txt \
+    && rm -f /tmp/requirements.txt
+
+# Then install the built wheel without resolving deps again.
+COPY --from=builder /build/dist/*.whl /tmp/
+RUN uv pip install --system --no-cache --no-deps /tmp/wikiapp-*.whl \
+    && rm -f /tmp/*.whl
 
 # Copy Alembic config (needed for migrations)
 COPY alembic.ini .
