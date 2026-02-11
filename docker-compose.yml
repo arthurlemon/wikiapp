@@ -1,0 +1,48 @@
+# shared config for app services
+x-app: &app
+  build: .
+  environment:
+    DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-wikiapp}:${POSTGRES_PASSWORD:-wikiapp}@postgres:5432/${POSTGRES_DB:-museums}
+    ARTIFACTS_DIR: /app/artifacts
+    WIKIDATA_TOKEN: ${WIKIDATA_TOKEN:-}
+  volumes: [artifacts:/app/artifacts]
+
+services:
+  postgres: # DB
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wikiapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wikiapp}
+      POSTGRES_DB: ${POSTGRES_DB:-museums}
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wikiapp} -d ${POSTGRES_DB:-museums}"]
+      interval: 3s
+      retries: 10
+
+  pipeline: # E2E data pipeline from parser to model
+    <<: *app
+    depends_on: { postgres: { condition: service_healthy } }
+    command: ["run-all", "--verbose"]
+
+  api: # minimal fastapi endpoints
+    <<: *app
+    ports: ["8000:8000"]
+    depends_on: { pipeline: { condition: service_completed_successfully } }
+    entrypoint: ["uvicorn", "wikiapp.api:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  notebook: # JupyterLab for interactive exploration of results
+    <<: *app
+    ports: ["8888:8888"]
+    depends_on: { pipeline: { condition: service_completed_successfully } }
+    volumes:
+      - artifacts:/app/artifacts
+      - ./notebooks:/app/notebooks
+    entrypoint: ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser",
+                  "--allow-root", "--ServerApp.token=${JUPYTER_TOKEN:-}",
+                  "--notebook-dir=/app/notebooks"]
+
+volumes:
+  pgdata:
+  artifacts:
