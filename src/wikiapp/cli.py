@@ -1,62 +1,106 @@
-"""CLI entry point: fetch data, build DB, run regression."""
+"""CLI with subcommands.  Works locally without Prefect; pass --orchestrate
+to route execution through Prefect flows (requires wikiapp[orchestration]).
+
+Subcommands:
+  migrate-db      Run schema migrations (Alembic for PG, create_all for SQLite)
+  run-etl         Fetch museums + enrich city population
+  build-features  Join raw tables into the feature table
+  train           Train + persist a linear regression model
+  run-all         Run the full pipeline end-to-end
+"""
 
 from __future__ import annotations
 
 import argparse
 import logging
-import sys
 
-from wikiapp import db, model, population, scraper
+from wikiapp.db import migrate_db
+from wikiapp.etl import enrich_population, get_distinct_city_titles, ingest_museums
+from wikiapp.model import train
+from wikiapp.transform import build_feature_table
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        description="Museum visitor vs city population analysis"
-    )
-    parser.add_argument(
-        "--database-url",
-        default=None,
-        help="SQLAlchemy database URL (default: DATABASE_URL env var or sqlite:///data/museums.db)",
-    )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable debug logging"
-    )
-    args = parser.parse_args(argv)
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="wikiapp CLI")
+    p.add_argument("-v", "--verbose", action="store_true")
+    sub = p.add_subparsers(dest="command")
+    sub.default = "run-all"
 
+    sub.add_parser("migrate-db", help="Run schema migrations")
+
+    for name in ("run-etl", "build-features", "train", "run-all"):
+        sp = sub.add_parser(name)
+        sp.add_argument(
+            "--orchestrate", action="store_true",
+            help="Route through Prefect flows (requires wikiapp[orchestration])",
+        )
+    return p
+
+
+# ---- local execution (no Prefect) ----
+
+def _run_etl() -> dict[str, int]:
+    migrate_db()
+    museums = ingest_museums()
+    titles = get_distinct_city_titles()
+    cities = enrich_population(titles)
+    return {"museums": museums, "cities": cities}
+
+
+def _run_features() -> int:
+    migrate_db()
+    return build_feature_table()
+
+
+def _run_train() -> dict:
+    migrate_db()
+    r = train()
+    return {"model_version": r.model_version, "r2": r.r2, "rmse": r.rmse}
+
+
+def _run_all() -> dict:
+    etl = _run_etl()
+    features = _run_features()
+    model = _run_train()
+    return {"etl": etl, "features": features, "model": model}
+
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
     )
 
-    # 1. Fetch museum data
-    logging.info("Fetching museum data from Wikipedia...")
-    museums = scraper.fetch_museums_from_wikipedia()
-    if not museums:
-        logging.error("No museum data retrieved. Exiting.")
-        sys.exit(1)
-    logging.info("Retrieved %d museums with >= 2M visitors", len(museums))
+    cmd = args.command or "run-all"
+    orchestrate = getattr(args, "orchestrate", False)
 
-    # 2. Enrich with city population
-    logging.info("Enriching with city population data...")
-    museums = population.enrich_museums_with_population(museums)
+    if cmd == "migrate-db":
+        migrate_db()
+        return
 
-    # 3. Store in database
-    engine = db.get_engine(args.database_url)
-    logging.info("Building database (%s)...", engine.url.drivername)
-    db.init_db(engine)
-    db.load_museums(museums, engine)
+    if orchestrate:
+        from wikiapp.pipelines import etl_flow, feature_flow, full_flow, train_flow
 
-    # 4. Query and run regression
-    df = db.query_dataset(engine)
-    engine.dispose()
+        flows = {
+            "run-etl": etl_flow,
+            "build-features": feature_flow,
+            "train": train_flow,
+            "run-all": full_flow,
+        }
+        result = flows[cmd]()
+        logging.info("Prefect flow result: %s", result)
+        return
 
-    if df.empty:
-        logging.error("No data with population info available for regression.")
-        sys.exit(1)
-
-    logging.info("Running linear regression on %d data points...", len(df))
-    result = model.run_regression(df)
-    print("\n" + model.summary(result))
+    runners = {
+        "run-etl": _run_etl,
+        "build-features": _run_features,
+        "train": _run_train,
+        "run-all": _run_all,
+    }
+    result = runners[cmd]()
+    logging.info("Result: %s", result)
 
 
 if __name__ == "__main__":

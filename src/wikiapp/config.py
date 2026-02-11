@@ -1,0 +1,40 @@
+"""Centralised settings resolved from environment variables.
+
+Falls back to SQLite when DATABASE_URL is not set, enabling zero-config
+local development while Docker Compose injects the PostgreSQL URL.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+
+
+def _default_database_url() -> str:
+    explicit = os.environ.get("DATABASE_URL")
+    if explicit:
+        return explicit
+    # Allow composing from individual PG vars (Docker Compose pattern)
+    user = os.environ.get("POSTGRES_USER")
+    if user:
+        pw = os.environ.get("POSTGRES_PASSWORD", "")
+        host = os.environ.get("POSTGRES_HOST", "localhost")
+        port = os.environ.get("POSTGRES_PORT", "5432")
+        db = os.environ.get("POSTGRES_DB", "wikiapp")
+        return f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{db}"
+    return "sqlite:///data/museums.db"
+
+
+@dataclass(frozen=True)
+class Settings:
+    database_url: str = field(default_factory=_default_database_url)
+    artifacts_dir: str = field(default_factory=lambda: os.environ.get("ARTIFACTS_DIR", "./artifacts"))
+    wikipedia_user_agent: str = field(
+        default_factory=lambda: os.environ.get(
+            "WIKIPEDIA_USER_AGENT", "wikiapp/0.3 (museum-data-pipeline)"
+        )
+    )
+    visitor_threshold: int = 2_000_000
+
+
+settings = Settings()

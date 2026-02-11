@@ -1,67 +1,24 @@
 """FastAPI service exposing museum data and regression results.
 
 Endpoints:
-  GET /health           — liveness check
-  GET /museums          — list all museums with city population
-  GET /regression       — regression summary + coefficients
-  POST /predict         — predict visitors for a given city population
-
-Design rationale:
-- Thin read-only API over the shared PostgreSQL database.
-- No authentication for the MVP; add API keys or OAuth in production.
-- Pydantic models for request/response validation.
+  GET  /health      — liveness check
+  GET  /museums     — list all museums with city population
+  GET  /regression  — latest model summary from registry
+  POST /predict     — predict visitors for a given city population
 """
 
 from __future__ import annotations
 
+import numpy as np
+import pandas as pd
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from sqlalchemy import text
 
-from wikiapp import db, model
+from wikiapp.db import get_engine, get_session
+from wikiapp.model import load_latest_model, summary_from_db
+from wikiapp.schemas import MuseumOut, PredictRequest, PredictResponse, RegressionOut
 
-app = FastAPI(title="Museum Visitor Analysis API", version="0.1.0")
-
-_engine = None
-
-
-def _get_engine():
-    global _engine
-    if _engine is None:
-        _engine = db.get_engine()
-    return _engine
-
-
-# --- Schemas ---
-
-
-class MuseumOut(BaseModel):
-    museum: str
-    city: str
-    country: str
-    visitors: int
-    city_population: int
-
-
-class RegressionOut(BaseModel):
-    equation: str
-    coefficient: float
-    intercept: float
-    r_squared: float
-    rmse: float
-    mae: float
-    n_samples: int
-
-
-class PredictRequest(BaseModel):
-    city_population: int
-
-
-class PredictResponse(BaseModel):
-    city_population: int
-    predicted_visitors: int
-
-
-# --- Endpoints ---
+app = FastAPI(title="Museum Visitor Analysis API", version="0.3.0")
 
 
 @app.get("/health")
@@ -71,43 +28,63 @@ def health():
 
 @app.get("/museums", response_model=list[MuseumOut])
 def list_museums():
-    """Return all museums with city population data."""
-    engine = _get_engine()
-    df = db.query_dataset(engine)
+    """Return all museums in the feature table."""
+    engine = get_engine()
+    with get_session(engine) as session:
+        df = pd.read_sql(
+            text("""
+                SELECT museum_name, city, country, annual_visitors, population
+                FROM museum_city_features
+                ORDER BY annual_visitors DESC
+            """),
+            session.connection(),
+        )
     if df.empty:
-        raise HTTPException(status_code=404, detail="No data. Run the pipeline first.")
+        raise HTTPException(404, "No data. Run the pipeline first.")
     return df.to_dict(orient="records")
 
 
 @app.get("/regression", response_model=RegressionOut)
 def regression():
-    """Return regression model summary."""
-    engine = _get_engine()
-    df = db.query_dataset(engine)
-    if df.empty:
-        raise HTTPException(status_code=404, detail="No data. Run the pipeline first.")
-    result = model.run_regression(df)
+    """Return the latest regression model summary."""
+    engine = get_engine()
+    summary = summary_from_db(engine)
+    if not summary:
+        raise HTTPException(404, "No model found. Run training first.")
+
+    model, version = load_latest_model(engine)
+    coef = float(model.coef_[0])
+    intercept = float(model.intercept_)
+
+    with get_session(engine) as session:
+        n = session.execute(
+            text("SELECT COUNT(*) FROM museum_city_features")
+        ).scalar()
+
     return RegressionOut(
-        equation=f"visitors = {result.coef:.4f} * city_population + {result.intercept:.0f}",
-        coefficient=result.coef,
-        intercept=result.intercept,
-        r_squared=result.r2,
-        rmse=result.rmse,
-        mae=result.mae,
-        n_samples=len(result.y),
+        equation=f"visitors = {coef:.4f} * population + {intercept:.0f}",
+        coefficient=coef,
+        intercept=intercept,
+        r_squared=summary["r2"],
+        rmse=summary["rmse"],
+        mae=summary["mae"],
+        n_samples=n,
+        model_version=version,
     )
 
 
 @app.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest):
     """Predict museum visitors given a city population."""
-    engine = _get_engine()
-    df = db.query_dataset(engine)
-    if df.empty:
-        raise HTTPException(status_code=404, detail="No data. Run the pipeline first.")
-    result = model.run_regression(df)
-    predicted = result.model.predict([[req.city_population]])[0]
+    engine = get_engine()
+    try:
+        model, version = load_latest_model(engine)
+    except ValueError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    predicted = model.predict(np.array([[req.population]], dtype=float))[0]
     return PredictResponse(
-        city_population=req.city_population,
+        population=req.population,
         predicted_visitors=max(0, int(predicted)),
+        model_version=version,
     )

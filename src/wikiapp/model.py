@@ -1,88 +1,134 @@
-"""Linear regression: city population → museum visitors.
+"""Linear regression with artifact persistence and model registry.
 
-Model choice rationale:
-- The task explicitly asks for a linear regression, so we use sklearn's
-  LinearRegression. This is appropriate for an MVP / exploratory analysis.
-- We also compute R², MAE, and RMSE to quantify fit quality.
-- The model operates on per-museum rows: each museum is one sample with
-  (city_population) as X and (visitors) as y.
+Each training run:
+1. Reads the feature table.
+2. Fits a LinearRegression (population → visitors).
+3. Saves the model as a joblib artifact.
+4. Records version + metrics in the model_registry table.
 
-Known limitations:
-- Linear regression assumes a linear relationship; in reality the
-  relationship is likely sublinear (log-log may fit better).
-- Cities with multiple major museums (London, Paris, D.C.) contribute
-  several points with the same X value — this doesn't violate OLS
-  assumptions but may inflate the apparent correlation.
-- Sample size is small (~30 museums), limiting statistical power.
-- Confounders (tourism infrastructure, museum reputation, free admission)
-  are not modeled.
-
-Next steps for a production system:
-- Try log-transformed features, polynomial regression, or regularized models.
-- Add features: GDP, tourism spend, free-admission flag, museum age.
-- Use cross-validation instead of a single train/test split.
+The API loads the latest registered model for serving predictions.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+
+from wikiapp.config import settings
+from wikiapp.db import get_session
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
-class RegressionResult:
-    """Container for regression outputs."""
-
-    model: LinearRegression
+class TrainResult:
+    model_version: str
+    artifact_path: str
     coef: float
     intercept: float
     r2: float
     rmse: float
     mae: float
-    X: np.ndarray
-    y: np.ndarray
-    y_pred: np.ndarray
+    n_samples: int
 
 
-def run_regression(df: pd.DataFrame) -> RegressionResult:
-    """Fit a simple linear regression: city_population → visitors.
+def train(engine: Engine | None = None) -> TrainResult:
+    """Train a linear regression and persist the artifact."""
+    with get_session(engine) as session:
+        df = pd.read_sql(
+            text("SELECT population, annual_visitors FROM museum_city_features"),
+            session.connection(),
+        )
 
-    Args:
-        df: DataFrame with columns 'city_population' and 'visitors'.
+    if df.empty:
+        raise ValueError("No training data in museum_city_features")
 
-    Returns:
-        RegressionResult with model and metrics.
-    """
-    X = df[["city_population"]].values
-    y = df["visitors"].values
+    X = df[["population"]].to_numpy(dtype=float)
+    y = df["annual_visitors"].to_numpy(dtype=float)
 
     model = LinearRegression()
     model.fit(X, y)
     y_pred = model.predict(X)
 
-    return RegressionResult(
-        model=model,
+    r2 = float(r2_score(y, y_pred))
+    rmse = float(np.sqrt(mean_squared_error(y, y_pred)))
+    mae = float(mean_absolute_error(y, y_pred))
+
+    # Save artifact
+    version = datetime.now(tz=timezone.utc).strftime("%Y%m%d%H%M%S")
+    artifacts_dir = Path(settings.artifacts_dir)
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = str(artifacts_dir / f"linear_regression_{version}.joblib")
+    joblib.dump(model, artifact_path)
+
+    # Register in DB
+    with get_session(engine) as session:
+        session.execute(
+            text("""
+                INSERT INTO model_registry (model_version, artifact_path, r2, mae, rmse)
+                VALUES (:v, :p, :r2, :mae, :rmse)
+            """),
+            {"v": version, "p": artifact_path, "r2": r2, "mae": mae, "rmse": rmse},
+        )
+
+    result = TrainResult(
+        model_version=version,
+        artifact_path=artifact_path,
         coef=float(model.coef_[0]),
         intercept=float(model.intercept_),
-        r2=float(r2_score(y, y_pred)),
-        rmse=float(np.sqrt(mean_squared_error(y, y_pred))),
-        mae=float(mean_absolute_error(y, y_pred)),
-        X=X,
-        y=y,
-        y_pred=y_pred,
+        r2=r2, rmse=rmse, mae=mae,
+        n_samples=len(y),
     )
+    logger.info("Trained model v%s: R²=%.4f RMSE=%.0f MAE=%.0f (n=%d)",
+                version, r2, rmse, mae, len(y))
+    return result
 
 
-def summary(result: RegressionResult) -> str:
-    """Human-readable summary of regression results."""
-    return (
-        f"Linear Regression: visitors = {result.coef:.4f} * city_population + {result.intercept:.0f}\n"
-        f"  R²   = {result.r2:.4f}\n"
-        f"  RMSE = {result.rmse:,.0f}\n"
-        f"  MAE  = {result.mae:,.0f}\n"
-        f"  n    = {len(result.y)}"
-    )
+def load_latest_model(engine: Engine | None = None) -> tuple[LinearRegression, str]:
+    """Load the most recently registered model from disk."""
+    with get_session(engine) as session:
+        row = session.execute(
+            text("""
+                SELECT model_version, artifact_path
+                FROM model_registry
+                ORDER BY created_at DESC
+                LIMIT 1
+            """)
+        ).first()
+
+    if row is None:
+        raise ValueError("No model found in model_registry. Run training first.")
+
+    model = joblib.load(row.artifact_path)
+    return model, row.model_version
+
+
+def summary_from_db(engine: Engine | None = None) -> dict | None:
+    """Return the latest model's metrics from the registry."""
+    with get_session(engine) as session:
+        row = session.execute(
+            text("""
+                SELECT model_version, r2, mae, rmse
+                FROM model_registry
+                ORDER BY created_at DESC
+                LIMIT 1
+            """)
+        ).first()
+    if row is None:
+        return None
+    return {
+        "model_version": row.model_version,
+        "r2": row.r2,
+        "mae": row.mae,
+        "rmse": row.rmse,
+    }

@@ -1,164 +1,191 @@
-"""Database layer using SQLAlchemy Core.
+"""Database layer — SQLAlchemy engine, sessions, and Alembic migrations.
 
-Supports both PostgreSQL (production / Docker) and SQLite (local dev / tests).
-The backend is selected via DATABASE_URL environment variable:
-  - postgresql://user:pass@host/db  → PostgreSQL
-  - sqlite:///path/to/file.db       → SQLite (default)
+Supports PostgreSQL (Docker / production) and SQLite (local dev / tests).
+Backend is selected via DATABASE_URL env var; defaults to SQLite.
 
-Design rationale:
-- SQLAlchemy Core (not ORM) keeps the abstraction thin — we define tables
-  declaratively but write queries as plain SQL expressions. This avoids
-  the cognitive overhead of an ORM while handling dialect differences
-  (SERIAL vs AUTOINCREMENT, ON CONFLICT syntax) transparently.
-- The same Python code works against both backends, so tests run on SQLite
-  in-memory while Docker Compose uses PostgreSQL.
+For tests, call ``init_db_tables(engine)`` which runs ``metadata.create_all``
+directly (no Alembic needed, works with in-memory SQLite).
+
+For production, call ``migrate_db()`` which runs Alembic migrations.
 """
 
 from __future__ import annotations
 
 import logging
-import os
-from typing import Any
+from contextlib import contextmanager
+from pathlib import Path
 
-import pandas as pd
 from sqlalchemy import (
+    BigInteger,
     Column,
-    ForeignKey,
+    Date,
+    DateTime,
+    Float,
     Integer,
     MetaData,
     String,
     Table,
-    UniqueConstraint,
+    Text,
     create_engine,
-    select,
+    func,
     text,
 )
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.url import make_url
+from sqlalchemy.orm import sessionmaker
+
+from wikiapp.config import settings
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DATABASE_URL = "sqlite:///data/museums.db"
-
 metadata = MetaData()
 
-cities_table = Table(
-    "cities",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("name", String, nullable=False),
-    Column("country", String, nullable=False),
-    Column("population", Integer),
-    UniqueConstraint("name", "country"),
+# ------------------------------------------------------------------
+# Schema declaration (used by both create_all and as documentation;
+# Alembic migration is the source of truth for production).
+# ------------------------------------------------------------------
+
+museums_raw = Table(
+    "museums_raw", metadata,
+    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("museum_name", Text, nullable=False),
+    Column("city", Text),
+    Column("country", Text),
+    Column("annual_visitors", BigInteger),
+    Column("attendance_year", Integer),
+    Column("city_wikipedia_title", Text),
+    Column("source_url", Text),
+    Column("ingested_at", DateTime(timezone=True), server_default=func.current_timestamp()),
 )
 
-museums_table = Table(
-    "museums",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("name", String, nullable=False, unique=True),
-    Column("city_id", Integer, ForeignKey("cities.id"), nullable=False),
-    Column("visitors", Integer, nullable=False),
+city_population_raw = Table(
+    "city_population_raw", metadata,
+    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("city", Text, nullable=False),
+    Column("country", Text),
+    Column("city_wikipedia_title", Text),
+    Column("wikidata_item_id", Text),
+    Column("population", BigInteger),
+    Column("population_as_of", Date),
+    Column("source_url", Text),
+    Column("ingested_at", DateTime(timezone=True), server_default=func.current_timestamp()),
 )
+
+museum_city_features = Table(
+    "museum_city_features", metadata,
+    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("museum_name", Text, nullable=False),
+    Column("city", Text),
+    Column("country", Text),
+    Column("annual_visitors", BigInteger),
+    Column("attendance_year", Integer),
+    Column("population", BigInteger),
+    Column("population_as_of", Date),
+    Column("created_at", DateTime(timezone=True), server_default=func.current_timestamp()),
+)
+
+model_registry = Table(
+    "model_registry", metadata,
+    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("model_version", String(64), nullable=False, unique=True),
+    Column("artifact_path", Text, nullable=False),
+    Column("r2", Float),
+    Column("mae", Float),
+    Column("rmse", Float),
+    Column("created_at", DateTime(timezone=True), server_default=func.current_timestamp()),
+)
+
+# ------------------------------------------------------------------
+# Engine / session helpers
+# ------------------------------------------------------------------
+
+_engine: Engine | None = None
 
 
 def get_engine(url: str | None = None) -> Engine:
-    """Create a SQLAlchemy engine from a URL or the DATABASE_URL env var."""
-    url = url or os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
-    return create_engine(url, echo=False)
+    """Return a (cached) engine.  Tests can pass an explicit URL."""
+    global _engine
+    if url:
+        return create_engine(url, echo=False)
+    if _engine is None:
+        _engine = create_engine(settings.database_url, echo=False)
+    return _engine
 
 
-def init_db(engine: Engine) -> None:
-    """Create tables if they don't exist."""
+def get_session_factory(engine: Engine | None = None) -> sessionmaker:
+    engine = engine or get_engine()
+    return sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+@contextmanager
+def get_session(engine: Engine | None = None):
+    """Yield a SQLAlchemy session with auto-commit / rollback."""
+    factory = get_session_factory(engine)
+    session = factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+# ------------------------------------------------------------------
+# Schema management
+# ------------------------------------------------------------------
+
+def init_db_tables(engine: Engine) -> None:
+    """Create all tables directly (for tests / SQLite local dev)."""
     metadata.create_all(engine)
-    logger.info("Database initialized (%s)", engine.url.drivername)
 
 
-def _upsert_city(conn, engine: Engine, name: str, country: str, population: int | None) -> int:
-    """Insert or update a city, return its id."""
-    if engine.dialect.name == "postgresql":
-        stmt = (
-            pg_insert(cities_table)
-            .values(name=name, country=country, population=population)
-            .on_conflict_do_update(
-                constraint="cities_name_country_key",
-                set_={"population": population},
-            )
-            .returning(cities_table.c.id)
-        )
-        result = conn.execute(stmt)
-        return result.scalar_one()
-    else:
-        # SQLite
-        stmt = (
-            sqlite_insert(cities_table)
-            .values(name=name, country=country, population=population)
-            .on_conflict_do_update(
-                index_elements=["name", "country"],
-                set_={"population": population},
-            )
-        )
-        conn.execute(stmt)
-        row = conn.execute(
-            select(cities_table.c.id).where(
-                cities_table.c.name == name, cities_table.c.country == country
-            )
-        ).fetchone()
-        return row[0]
+def migrate_db(database_url: str | None = None) -> None:
+    """Run Alembic migrations for PostgreSQL, or create_all for SQLite."""
+    url = database_url or settings.database_url
+    engine = create_engine(url, echo=False)
+
+    # For SQLite, just create tables directly
+    if make_url(url).drivername.startswith("sqlite"):
+        metadata.create_all(engine)
+        engine.dispose()
+        return
+
+    _ensure_pg_database(url)
+
+    project_root = Path(__file__).resolve().parents[2]
+    ini_path = project_root / "alembic.ini"
+    if not ini_path.exists():
+        logger.warning("alembic.ini not found, falling back to create_all")
+        metadata.create_all(engine)
+        engine.dispose()
+        return
+
+    from alembic import command
+    from alembic.config import Config
+
+    config = Config(str(ini_path))
+    config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(config, "head")
+    engine.dispose()
 
 
-def _upsert_museum(conn, engine: Engine, name: str, city_id: int, visitors: int) -> int:
-    if engine.dialect.name == "postgresql":
-        stmt = (
-            pg_insert(museums_table)
-            .values(name=name, city_id=city_id, visitors=visitors)
-            .on_conflict_do_update(
-                constraint="museums_name_key",
-                set_={"city_id": city_id, "visitors": visitors},
-            )
-            .returning(museums_table.c.id)
-        )
-        result = conn.execute(stmt)
-        return result.scalar_one()
-    else:
-        stmt = (
-            sqlite_insert(museums_table)
-            .values(name=name, city_id=city_id, visitors=visitors)
-            .on_conflict_do_update(
-                index_elements=["name"],
-                set_={"city_id": city_id, "visitors": visitors},
-            )
-        )
-        conn.execute(stmt)
-        row = conn.execute(
-            select(museums_table.c.id).where(museums_table.c.name == name)
-        ).fetchone()
-        return row[0]
-
-
-def load_museums(museums_data: list[dict[str, Any]], engine: Engine) -> None:
-    """Bulk-load museum data into the DB."""
-    with engine.begin() as conn:
-        for m in museums_data:
-            city_id = _upsert_city(conn, engine, m["city"], m["country"], m.get("city_population"))
-            _upsert_museum(conn, engine, m["name"], city_id, m["visitors"])
-    logger.info("Loaded %d museums into database", len(museums_data))
-
-
-def query_dataset(engine: Engine) -> pd.DataFrame:
-    """Return a joined DataFrame of museums + city population for analysis."""
-    query = text("""
-        SELECT
-            m.name       AS museum,
-            c.name       AS city,
-            c.country    AS country,
-            m.visitors   AS visitors,
-            c.population AS city_population
-        FROM museums m
-        JOIN cities c ON m.city_id = c.id
-        WHERE c.population IS NOT NULL
-        ORDER BY m.visitors DESC
-    """)
-    with engine.connect() as conn:
-        return pd.read_sql_query(query, conn)
+def _ensure_pg_database(database_url: str) -> None:
+    """Create the target PostgreSQL database if it doesn't exist."""
+    url = make_url(database_url)
+    target_db = url.database
+    if not target_db:
+        return
+    admin_url = url.set(database="postgres")
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        with admin_engine.connect() as conn:
+            exists = conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": target_db},
+            ).scalar()
+            if not exists:
+                conn.execute(text(f'CREATE DATABASE "{target_db}"'))
+    finally:
+        admin_engine.dispose()

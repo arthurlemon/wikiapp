@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wikiapp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Museum visitor vs city population analysis using Wikipedia data"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,13 +14,18 @@ dependencies = [
     "matplotlib>=3.8",
     "seaborn>=0.13",
     "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "beautifulsoup4>=4.12",
+    "joblib>=1.3",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9"]
 api = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "psycopg2-binary>=2.9"]
-notebook = ["jupyter>=1.0", "ipykernel>=6.0", "psycopg2-binary>=2.9"]
-dev = ["pytest>=7.0", "ruff>=0.1", "httpx>=0.27"]
+orchestration = ["prefect>=3.0"]
+notebook = ["jupyter>=1.0", "ipykernel>=6.0"]
+dev = ["pytest>=7.0", "ruff>=0.1"]
 
 [project.scripts]
 wikiapp = "wikiapp.cli:main"
@@ -30,6 +35,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 wikiapp = ["data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100

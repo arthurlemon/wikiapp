@@ -1,16 +1,9 @@
 # docker-compose.yml
 #
-# Services:
-#   1. `postgres`  — PostgreSQL database
-#   2. `pipeline`  — CLI: fetches data, populates DB, prints regression summary
-#   3. `api`       — FastAPI service for querying data + predictions
-#   4. `notebook`  — Jupyter server for interactive exploration
-#
 # Usage:
 #   docker compose up --build              # starts everything
-#   docker compose up --build pipeline     # run pipeline only
 #   curl http://localhost:8000/museums      # query the API
-#   open http://localhost:8888              # open Jupyter
+#   open http://localhost:8888              # Jupyter notebook
 
 services:
   postgres:
@@ -29,39 +22,46 @@ services:
       retries: 10
 
   pipeline:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     environment:
-      DATABASE_URL: postgresql://wikiapp:wikiapp@postgres:5432/museums
+      DATABASE_URL: postgresql+psycopg2://wikiapp:wikiapp@postgres:5432/museums
+      ARTIFACTS_DIR: /app/artifacts
+    volumes:
+      - artifacts:/app/artifacts
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["--verbose"]
+    command: ["run-all", "--verbose"]
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
+    build: .
     environment:
-      DATABASE_URL: postgresql://wikiapp:wikiapp@postgres:5432/museums
+      DATABASE_URL: postgresql+psycopg2://wikiapp:wikiapp@postgres:5432/museums
+      ARTIFACTS_DIR: /app/artifacts
     ports:
       - "8000:8000"
+    volumes:
+      - artifacts:/app/artifacts
     depends_on:
       pipeline:
         condition: service_completed_successfully
+    entrypoint: ["uvicorn", "wikiapp.api:app", "--host", "0.0.0.0", "--port", "8000"]
 
   notebook:
-    build:
-      context: .
-      dockerfile: Dockerfile.notebook
+    build: .
     environment:
-      DATABASE_URL: postgresql://wikiapp:wikiapp@postgres:5432/museums
+      DATABASE_URL: postgresql+psycopg2://wikiapp:wikiapp@postgres:5432/museums
+      ARTIFACTS_DIR: /app/artifacts
     ports:
       - "8888:8888"
+    volumes:
+      - artifacts:/app/artifacts
     depends_on:
       pipeline:
         condition: service_completed_successfully
+    entrypoint: ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser",
+                  "--allow-root", "--NotebookApp.token=''", "--notebook-dir=/app/notebooks"]
 
 volumes:
   pgdata:
+  artifacts:

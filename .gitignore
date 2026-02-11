@@ -207,4 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 # Project runtime data
-data/museums.db
+data/
+artifacts/
+*.joblib
+.env
